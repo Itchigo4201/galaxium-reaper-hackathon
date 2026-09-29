@@ -971,3 +971,319 @@ class TestFlightFiltering:
 
         results = flight.list_flights(db_session, min_price=10000000)
         assert len(results) == 0
+
+
+# ============================================================
+# Adversarial Sprint 3 — additional service-layer tests
+# Added by full-system audit: cover seat-class price multipliers,
+# seat counter isolation per class, double-booking guard, and
+# the /internal/bookings/from-hold contract boundary.
+# ============================================================
+
+
+class TestBookingServiceSeatClasses:
+    """Seat-class price multipliers and counter isolation."""
+
+    def _make_user_and_flight(self, db_session):
+        db_session.add(User(name="Traveler", email="t@example.com"))
+        db_session.add(Flight(
+            origin="Earth",
+            destination="Mars",
+            departure_time="2099-06-01 10:00",
+            arrival_time="2099-06-08 14:00",
+            base_price=10000,
+            economy_seats_available=2,
+            business_seats_available=2,
+            galaxium_seats_available=2,
+        ))
+        db_session.commit()
+        u = db_session.query(User).first()
+        f = db_session.query(Flight).first()
+        return u, f
+
+    def test_economy_price_multiplier(self, db_session):
+        """Economy price = base_price × 1.0."""
+        u, f = self._make_user_and_flight(db_session)
+        result = booking.book_flight(db_session, u.user_id, "Traveler", f.flight_id, "economy")
+        assert result.price_paid == 10000  # 10000 × 1.0
+
+    def test_business_price_multiplier(self, db_session):
+        """Business price = base_price × 2.5."""
+        u, f = self._make_user_and_flight(db_session)
+        result = booking.book_flight(db_session, u.user_id, "Traveler", f.flight_id, "business")
+        assert result.price_paid == 25000  # 10000 × 2.5
+
+    def test_galaxium_price_multiplier(self, db_session):
+        """Galaxium price = base_price × 5.0."""
+        u, f = self._make_user_and_flight(db_session)
+        result = booking.book_flight(db_session, u.user_id, "Traveler", f.flight_id, "galaxium")
+        assert result.price_paid == 50000  # 10000 × 5.0
+
+    def test_economy_seat_counter_decremented_not_others(self, db_session):
+        """Booking economy decrements only economy counter."""
+        u, f = self._make_user_and_flight(db_session)
+        booking.book_flight(db_session, u.user_id, "Traveler", f.flight_id, "economy")
+        db_session.refresh(f)
+        assert f.economy_seats_available == 1
+        assert f.business_seats_available == 2
+        assert f.galaxium_seats_available == 2
+
+    def test_business_seat_counter_decremented_not_others(self, db_session):
+        """Booking business decrements only business counter."""
+        u, f = self._make_user_and_flight(db_session)
+        booking.book_flight(db_session, u.user_id, "Traveler", f.flight_id, "business")
+        db_session.refresh(f)
+        assert f.economy_seats_available == 2
+        assert f.business_seats_available == 1
+        assert f.galaxium_seats_available == 2
+
+    def test_galaxium_seat_counter_decremented_not_others(self, db_session):
+        """Booking galaxium decrements only galaxium counter."""
+        u, f = self._make_user_and_flight(db_session)
+        booking.book_flight(db_session, u.user_id, "Traveler", f.flight_id, "galaxium")
+        db_session.refresh(f)
+        assert f.economy_seats_available == 2
+        assert f.business_seats_available == 2
+        assert f.galaxium_seats_available == 1
+
+    def test_second_booking_same_class_exhausts_remaining(self, db_session):
+        """With only 1 seat remaining, a second booking fails cleanly."""
+        db_session.add(User(name="A", email="a@example.com"))
+        db_session.add(User(name="B", email="b@example.com"))
+        db_session.add(Flight(
+            origin="Earth", destination="Mars",
+            departure_time="2099-01-01 09:00", arrival_time="2099-01-01 17:00",
+            base_price=5000,
+            economy_seats_available=1,
+            business_seats_available=0,
+            galaxium_seats_available=0,
+        ))
+        db_session.commit()
+        ua = db_session.query(User).filter_by(name="A").first()
+        ub = db_session.query(User).filter_by(name="B").first()
+        fl = db_session.query(Flight).first()
+
+        r1 = booking.book_flight(db_session, ua.user_id, "A", fl.flight_id, "economy")
+        assert r1.status == "booked"
+
+        r2 = booking.book_flight(db_session, ub.user_id, "B", fl.flight_id, "economy")
+        assert isinstance(r2, ErrorResponse)
+        assert r2.error_code == "NO_SEATS_AVAILABLE"
+
+    def test_no_galaxium_seats_returns_error(self, db_session):
+        """Booking galaxium when 0 available returns NO_SEATS_AVAILABLE for that class."""
+        u, f = self._make_user_and_flight(db_session)
+        # Exhaust all galaxium
+        booking.book_flight(db_session, u.user_id, "Traveler", f.flight_id, "galaxium")
+        booking.book_flight(db_session, u.user_id, "Traveler", f.flight_id, "galaxium")
+        # Third booking should fail
+        result = booking.book_flight(db_session, u.user_id, "Traveler", f.flight_id, "galaxium")
+        assert isinstance(result, ErrorResponse)
+        assert result.error_code == "NO_SEATS_AVAILABLE"
+
+    def test_invalid_seat_class_returns_error(self, db_session):
+        """Booking with an invalid seat class returns INVALID_SEAT_CLASS."""
+        u, f = self._make_user_and_flight(db_session)
+        result = booking.book_flight(db_session, u.user_id, "Traveler", f.flight_id, "first_class")  # type: ignore[arg-type]
+        assert isinstance(result, ErrorResponse)
+        assert result.error_code == "INVALID_SEAT_CLASS"
+
+
+class TestCancelBookingSeatRestore:
+    """Cancellation must restore the correct seat-class counter."""
+
+    def _setup(self, db_session, seat_class, seats):
+        db_session.add(User(name="Traveler", email="t@example.com"))
+        db_session.add(Flight(
+            origin="Earth", destination="Mars",
+            departure_time="2099-01-01 09:00", arrival_time="2099-01-01 17:00",
+            base_price=5000,
+            economy_seats_available=seats[0],
+            business_seats_available=seats[1],
+            galaxium_seats_available=seats[2],
+        ))
+        db_session.commit()
+        u = db_session.query(User).first()
+        f = db_session.query(Flight).first()
+        db_session.add(Booking(
+            user_id=u.user_id,
+            flight_id=f.flight_id,
+            status="booked",
+            booking_time="2099-01-01 10:00",
+            seat_class=seat_class,
+            price_paid=5000,
+        ))
+        db_session.commit()
+        b = db_session.query(Booking).first()
+        return u, f, b
+
+    def test_cancel_economy_restores_economy_seat(self, db_session):
+        u, f, b = self._setup(db_session, "economy", (0, 3, 1))
+        booking.cancel_booking(db_session, b.booking_id)
+        db_session.refresh(f)
+        assert f.economy_seats_available == 1
+        assert f.business_seats_available == 3
+        assert f.galaxium_seats_available == 1
+
+    def test_cancel_business_restores_business_seat(self, db_session):
+        u, f, b = self._setup(db_session, "business", (3, 0, 1))
+        booking.cancel_booking(db_session, b.booking_id)
+        db_session.refresh(f)
+        assert f.economy_seats_available == 3
+        assert f.business_seats_available == 1
+        assert f.galaxium_seats_available == 1
+
+    def test_cancel_galaxium_restores_galaxium_seat(self, db_session):
+        u, f, b = self._setup(db_session, "galaxium", (3, 2, 0))
+        booking.cancel_booking(db_session, b.booking_id)
+        db_session.refresh(f)
+        assert f.economy_seats_available == 3
+        assert f.business_seats_available == 2
+        assert f.galaxium_seats_available == 1
+
+
+class TestFromHoldEndpointContract:
+    """
+    Tests for the /internal/bookings/from-hold Python service endpoint.
+    This is the contract boundary Java calls after confirming a hold.
+    We test via the service layer directly since the REST TestClient
+    is blocked by the upstream fastapi-mcp compatibility issue.
+    """
+
+    def _setup(self, db_session):
+        db_session.add(User(name="Hold Traveler", email="ht@example.com"))
+        db_session.add(Flight(
+            origin="Earth", destination="Mars",
+            departure_time="2099-01-01 09:00", arrival_time="2099-01-01 17:00",
+            base_price=8000,
+            economy_seats_available=3,
+            business_seats_available=3,
+            galaxium_seats_available=3,
+        ))
+        db_session.commit()
+        u = db_session.query(User).first()
+        f = db_session.query(Flight).first()
+        return u, f
+
+    def test_from_hold_economy_creates_booking(self, db_session):
+        """Hold confirmation with economy class creates a booking and decrements economy."""
+        u, f = self._setup(db_session)
+        hold_data = {
+            "travelerId": u.user_id,
+            "travelerName": "Hold Traveler",
+            "flightId": f.flight_id,
+            "seatClass": "economy",
+        }
+        result = booking.book_flight(
+            db_session,
+            user_id=hold_data["travelerId"],
+            name=hold_data["travelerName"],
+            flight_id=hold_data["flightId"],
+            seat_class=hold_data["seatClass"],
+        )
+        assert result.status == "booked"
+        assert result.seat_class == "economy"
+        assert result.price_paid == 8000  # 8000 × 1.0
+        db_session.refresh(f)
+        assert f.economy_seats_available == 2
+
+    def test_from_hold_galaxium_creates_booking(self, db_session):
+        """Hold confirmation with galaxium class creates a booking and decrements galaxium."""
+        u, f = self._setup(db_session)
+        hold_data = {
+            "travelerId": u.user_id,
+            "travelerName": "Hold Traveler",
+            "flightId": f.flight_id,
+            "seatClass": "galaxium",
+        }
+        result = booking.book_flight(
+            db_session,
+            user_id=hold_data["travelerId"],
+            name=hold_data["travelerName"],
+            flight_id=hold_data["flightId"],
+            seat_class=hold_data["seatClass"],
+        )
+        assert result.status == "booked"
+        assert result.price_paid == 40000  # 8000 × 5.0
+
+    def test_from_hold_name_mismatch_fails(self, db_session):
+        """If the Java service sends wrong travelerName, booking fails with NAME_MISMATCH."""
+        u, f = self._setup(db_session)
+        result = booking.book_flight(
+            db_session,
+            user_id=u.user_id,
+            name="Wrong Name",
+            flight_id=f.flight_id,
+            seat_class="economy",
+        )
+        assert isinstance(result, ErrorResponse)
+        assert result.error_code == "NAME_MISMATCH"
+
+    def test_from_hold_unknown_user_fails(self, db_session):
+        """If the Java service sends unknown travelerId, booking fails with USER_NOT_FOUND."""
+        u, f = self._setup(db_session)
+        result = booking.book_flight(
+            db_session,
+            user_id=99999,
+            name="Nobody",
+            flight_id=f.flight_id,
+            seat_class="economy",
+        )
+        assert isinstance(result, ErrorResponse)
+        assert result.error_code == "USER_NOT_FOUND"
+
+    def test_from_hold_unknown_flight_fails(self, db_session):
+        """If the Java service sends unknown flightId, booking fails with FLIGHT_NOT_FOUND."""
+        u, f = self._setup(db_session)
+        result = booking.book_flight(
+            db_session,
+            user_id=u.user_id,
+            name="Hold Traveler",
+            flight_id=99999,
+            seat_class="economy",
+        )
+        assert isinstance(result, ErrorResponse)
+        assert result.error_code == "FLIGHT_NOT_FOUND"
+
+    def test_from_hold_no_seats_fails(self, db_session):
+        """If all seats of the class are gone before hold confirms, fails gracefully."""
+        db_session.add(User(name="Hold Traveler", email="ht@example.com"))
+        db_session.add(Flight(
+            origin="Earth", destination="Mars",
+            departure_time="2099-01-01 09:00", arrival_time="2099-01-01 17:00",
+            base_price=8000,
+            economy_seats_available=0,
+            business_seats_available=0,
+            galaxium_seats_available=0,
+        ))
+        db_session.commit()
+        u = db_session.query(User).first()
+        f = db_session.query(Flight).first()
+        result = booking.book_flight(db_session, u.user_id, "Hold Traveler", f.flight_id, "galaxium")
+        assert isinstance(result, ErrorResponse)
+        assert result.error_code == "NO_SEATS_AVAILABLE"
+
+    def test_externalBookingReference_is_numeric_string(self, db_session):
+        """
+        Verify that the Java service stores booking_id as the external reference.
+        The Python API returns an integer booking_id; HoldService stores String.valueOf(bookingId).
+        The frontend must handle a numeric string like "42" as the booking reference.
+        """
+        u, f = self._setup(db_session)
+        result = booking.book_flight(
+            db_session,
+            user_id=u.user_id,
+            name="Hold Traveler",
+            flight_id=f.flight_id,
+            seat_class="economy",
+        )
+        # Simulate what HoldService.java does: String.valueOf(booking.getBookingId())
+        # This produces a numeric string, not a GX- prefixed reference.
+        external_ref = str(result.booking_id)
+        # Must be a non-empty numeric string that the frontend can display and copy
+        assert external_ref.isdigit()
+        assert len(external_ref) > 0
+        # safeReference() on a numeric string should be unchanged (all digits allowed)
+        import re
+        safe = re.sub(r'[^a-zA-Z0-9_-]', '-', external_ref)
+        assert safe == external_ref  # No substitution needed
