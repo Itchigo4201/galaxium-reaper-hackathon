@@ -2,30 +2,32 @@ import { useState } from 'react';
 import {
   ArrowRight,
   Bug,
-  Calendar,
-  CheckCircle2,
-  DollarSign,
   Github,
   Hammer,
-  Plane,
   Rocket,
   RotateCcw,
-  Ticket,
 } from 'lucide-react';
+import { BookingConfirmation } from '../components/bookings/BookingConfirmation';
 
 type DemoState = 'problem' | 'confirmed';
 
 const sample = {
   reference: 'GX-2048',
-  route: 'Earth → Mars',
-  departure: 'Oct 12, 09:30',
-  arrival: 'Oct 18, 16:45',
-  seatClass: 'Galaxium Class',
-  total: '$12,450.00',
+  origin: 'Earth',
+  destination: 'Mars',
+  departureTime: '2026-10-12T09:30:00Z',
+  arrivalTime: '2026-10-18T16:45:00Z',
+  seatClassValue: 'galaxium' as const,
+  totalPaid: 12450,
 };
 
 export const HackathonDemo = () => {
-  const [state, setState] = useState<DemoState>('problem');
+  const [state, setState] = useState<DemoState>(() =>
+    new URLSearchParams(window.location.search).get('view') === 'confirmed'
+      ? 'confirmed'
+      : 'problem'
+  );
+  const [demoNotice, setDemoNotice] = useState('');
 
   return (
     <main className="min-h-screen bg-space-dark text-star-white">
@@ -41,15 +43,15 @@ export const HackathonDemo = () => {
           <h1 className="max-w-4xl text-4xl font-black tracking-tight md:text-6xl">
             Galaxium Travels
             <span className="block bg-cosmic-gradient bg-clip-text text-transparent">
-              Booking Confirmation Upgrade
+              Post-Booking Experience Upgrade
             </span>
           </h1>
           <p className="mt-5 max-w-3xl text-lg text-star-white/70">
             We used IBM Bob to explore an unfamiliar multi-service application, identify a real booking UX defect,
-            fix it, and build a persistent confirmation experience.
+            fix it, and turn confirmation into a useful post-booking action center.
           </p>
           <a
-            className="mt-7 inline-flex items-center gap-2 text-sm font-semibold text-space-blue hover:text-alien-green"
+            className="mt-7 inline-flex items-center gap-2 text-sm font-semibold text-alien-green hover:text-white"
             href="https://github.com/Itchigo4201/galaxium-reaper-hackathon"
             target="_blank"
             rel="noreferrer"
@@ -63,7 +65,7 @@ export const HackathonDemo = () => {
         {[
           { icon: Bug, title: 'Explore', text: 'Bob mapped the React, FastAPI, SQLite, MCP, and Java hold-service flow.' },
           { icon: Hammer, title: 'Fix', text: 'The modal no longer closes immediately after a successful booking confirmation.' },
-          { icon: Rocket, title: 'Build', text: 'A persistent confirmation view now keeps the booking reference and trip details visible.' },
+          { icon: Rocket, title: 'Build', text: 'The persistent confirmation became a post-booking action center with copy, calendar, receipt, and booking-history actions.' },
         ].map(({ icon: Icon, title, text }) => (
           <div key={title} className="glass-card p-6">
             <Icon className="mb-4 text-alien-green" size={28} />
@@ -80,7 +82,10 @@ export const HackathonDemo = () => {
             <h2 className="mt-2 text-3xl font-bold">See the fix in one click</h2>
           </div>
           <button
-            onClick={() => setState('problem')}
+            onClick={() => {
+              setState('problem');
+              setDemoNotice('');
+            }}
             className="inline-flex items-center gap-2 rounded-lg border border-white/15 px-4 py-2 text-sm text-star-white/70 hover:bg-white/5"
           >
             <RotateCcw size={16} /> Reset
@@ -122,38 +127,26 @@ export const HackathonDemo = () => {
           </div>
         ) : (
           <div className="glass-card mx-auto max-w-2xl p-6 md:p-8">
-            <div className="flex flex-col items-center text-center">
-              <div className="rounded-full border border-alien-green/30 bg-alien-green/15 p-4">
-                <CheckCircle2 className="text-alien-green" size={42} />
-              </div>
-              <p className="mt-3 text-sm text-star-white/60">Your seat is booked</p>
-              <h3 className="mt-1 text-3xl font-black">Booking Confirmed</h3>
-            </div>
-
-            <div className="mt-6 flex items-center gap-3 rounded-xl border border-alien-green/30 bg-alien-green/10 p-4">
-              <Ticket className="text-alien-green" size={18} />
-              <span className="text-sm text-star-white/60">Booking Reference</span>
-              <span className="ml-auto font-mono text-lg font-bold text-alien-green">#{sample.reference}</span>
-            </div>
-
-            <div className="mt-5 rounded-xl border border-white/10 bg-white/5 p-5">
-              <div className="flex items-center gap-2">
-                <Plane className="text-space-blue" size={19} />
-                <span className="font-bold">{sample.route}</span>
-              </div>
-              <div className="mt-5 grid gap-4 sm:grid-cols-2">
-                <Detail icon={Calendar} label="Departure" value={sample.departure} />
-                <Detail icon={Calendar} label="Arrival" value={sample.arrival} />
-                <Detail icon={Rocket} label="Seat Class" value={sample.seatClass} />
-                <Detail icon={DollarSign} label="Total Paid" value={sample.total} />
-              </div>
-            </div>
-
-            <button className="mt-5 w-full rounded-xl bg-cosmic-gradient px-5 py-3 font-bold text-white">
-              View My Bookings
-            </button>
+            <BookingConfirmation
+              data={{
+                reference: sample.reference,
+                origin: sample.origin,
+                destination: sample.destination,
+                departureTime: sample.departureTime,
+                arrivalTime: sample.arrivalTime,
+                seatClass: sample.seatClassValue,
+                totalPaid: sample.totalPaid,
+              }}
+              showHeading
+              onViewBookings={() =>
+                setDemoNotice('Demo action: the production app opens My Bookings here.')
+              }
+            />
             <p className="mt-4 text-center text-xs text-star-white/45">
               Deterministic hackathon demo — no backend service required.
+            </p>
+            <p aria-live="polite" className="mt-2 min-h-5 text-center text-xs text-alien-green">
+              {demoNotice}
             </p>
           </div>
         )}
@@ -161,21 +154,3 @@ export const HackathonDemo = () => {
     </main>
   );
 };
-
-const Detail = ({
-  icon: Icon,
-  label,
-  value,
-}: {
-  icon: typeof Calendar;
-  label: string;
-  value: string;
-}) => (
-  <div className="flex items-start gap-3">
-    <Icon className="mt-0.5 text-star-white/40" size={16} />
-    <div>
-      <p className="text-xs text-star-white/45">{label}</p>
-      <p className="mt-0.5 font-medium">{value}</p>
-    </div>
-  </div>
-);

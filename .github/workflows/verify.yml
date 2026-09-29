@@ -27,6 +27,9 @@ jobs:
       - name: Lint
         working-directory: booking_system_frontend
         run: npm run lint
+      - name: Test
+        working-directory: booking_system_frontend
+        run: npm test
       - name: Normal production build
         working-directory: booking_system_frontend
         run: npm run build

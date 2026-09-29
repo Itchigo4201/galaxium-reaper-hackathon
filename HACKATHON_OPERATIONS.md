@@ -14,7 +14,7 @@ Bob is reserved for high-value reasoning only: architecture decisions, difficult
 ./scripts/hackathon/verify.sh live
 ```
 
-- `quick`: frontend lint, normal build, hackathon Pages build, git diff sanity check.
+- `quick`: frontend lint, frontend tests, normal build, hackathon Pages build, git diff sanity check.
 - `full`: quick checks plus Python service-layer tests and Java tests when Maven is available. Set `GALAXIUM_STRICT_BACKEND=1` to also run the upstream REST suite; it currently exposes a pre-existing `fastapi-mcp`/`mcp` compatibility issue caused by unconstrained dependencies.
 - `live`: verifies the deployed GitHub Pages demo and its referenced assets.
 
