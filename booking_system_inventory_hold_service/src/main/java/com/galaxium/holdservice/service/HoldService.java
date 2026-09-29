@@ -110,16 +110,22 @@ public class HoldService {
 
             PythonBackendClient.BookingResponse booking = pythonBackendClient.createBookingFromHold(holdData);
 
-            // Update hold with booking reference
+            // Update hold with the public booking reference returned by Python.
+            // Fall back to the legacy numeric ID for backwards compatibility.
+            String bookingReference = booking.getBookingReference();
+            if (bookingReference == null || bookingReference.isBlank()) {
+                bookingReference = String.valueOf(booking.getBookingId());
+            }
+
             hold.setStatus(Hold.HoldStatus.CONFIRMED);
-            hold.setExternalBookingReference(String.valueOf(booking.getBookingId()));
+            hold.setExternalBookingReference(bookingReference);
             Hold confirmedHold = holdRepository.save(hold);
 
             // Audit event
             createAuditEvent("HOLD", holdId, "CONFIRMED",
-                    String.format("Hold confirmed, booking ID: %s", booking.getBookingId()));
+                    String.format("Hold confirmed, booking reference: %s", bookingReference));
 
-            log.info("Hold {} confirmed successfully with booking {}", holdId, booking.getBookingId());
+            log.info("Hold {} confirmed successfully with booking reference {}", holdId, bookingReference);
             return confirmedHold;
 
         } catch (PythonBackendClient.BookingCreationException e) {

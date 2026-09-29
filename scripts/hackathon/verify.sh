@@ -32,14 +32,14 @@ backend() {
       say "Refreshing backend virtualenv dependencies"
       .venv/bin/python -m pip install -q -r requirements.txt
     fi
-    .venv/bin/python -m pytest -q tests/test_services.py
+    .venv/bin/python -m pytest -q tests/test_services.py tests/test_booking_confirmation_backend.py
     if [[ "${GALAXIUM_STRICT_BACKEND:-0}" == "1" ]]; then
       .venv/bin/python -m pytest -q tests/test_rest.py
     else
       printf 'NOTE: REST endpoint tests are skipped locally by default because the upstream unconstrained fastapi-mcp/mcp dependency set is currently incompatible. Set GALAXIUM_STRICT_BACKEND=1 to run them.\n'
     fi
   else
-    python3 -m pytest -q tests/test_services.py
+    python3 -m pytest -q tests/test_services.py tests/test_booking_confirmation_backend.py
   fi
 }
 

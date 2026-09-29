@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 from sqlalchemy.orm import Session
 
 from models import Booking, Flight, User
-from schemas import BookingOut, ErrorResponse, SeatClass
+from schemas import BookingConfirmationOut, BookingOut, ErrorResponse, SeatClass
 
 # Price multipliers for each seat class
 SEAT_CLASS_MULTIPLIERS = {
@@ -127,3 +127,67 @@ def get_bookings(db: Session, user_id: int) -> list[BookingOut]:
     """Retrieve all bookings for a specific user."""
     bookings = db.query(Booking).filter(Booking.user_id == user_id).all()
     return [BookingOut.model_validate(b) for b in bookings]
+
+
+def parse_booking_reference(reference: str) -> int | None:
+    """Parse a public GX reference or legacy numeric reference into a booking ID."""
+    normalized = reference.strip()
+    if normalized.isdigit():
+        return int(normalized)
+
+    if normalized.upper().startswith("GX-"):
+        suffix = normalized[3:]
+        if suffix.isdigit():
+            return int(suffix)
+
+    return None
+
+
+def get_booking_confirmation(
+    db: Session,
+    booking_reference: str,
+    user_id: int,
+) -> BookingConfirmationOut | ErrorResponse:
+    """Return a durable confirmation view for a booking owned by user_id."""
+    booking_id = parse_booking_reference(booking_reference)
+    if booking_id is None:
+        return ErrorResponse(
+            error="Invalid booking reference",
+            error_code="INVALID_BOOKING_REFERENCE",
+            details="Use a GX reference such as GX-000123.",
+        )
+
+    existing_booking = (
+        db.query(Booking)
+        .filter(Booking.booking_id == booking_id, Booking.user_id == user_id)
+        .first()
+    )
+    if not existing_booking:
+        return ErrorResponse(
+            error="Booking not found",
+            error_code="BOOKING_NOT_FOUND",
+            details="No booking with that reference exists for this user.",
+        )
+
+    flight = db.query(Flight).filter(Flight.flight_id == existing_booking.flight_id).first()
+    if not flight:
+        return ErrorResponse(
+            error="Flight not found",
+            error_code="FLIGHT_NOT_FOUND",
+            details=f"Flight {existing_booking.flight_id} for this booking no longer exists.",
+        )
+
+    return BookingConfirmationOut(
+        booking_id=existing_booking.booking_id,
+        booking_reference=existing_booking.booking_reference,
+        user_id=existing_booking.user_id,
+        flight_id=existing_booking.flight_id,
+        status=existing_booking.status,
+        booking_time=existing_booking.booking_time,
+        seat_class=existing_booking.seat_class,
+        price_paid=existing_booking.price_paid,
+        origin=flight.origin,
+        destination=flight.destination,
+        departure_time=flight.departure_time,
+        arrival_time=flight.arrival_time,
+    )

@@ -10,10 +10,12 @@ from sqlalchemy.orm import Session
 
 from db import get_db, init_db
 from schemas import (
+    BookingConfirmationOut,
     BookingOut,
     BookingRequest,
     ErrorResponse,
     FlightOut,
+    HoldBookingRequest,
     UserOut,
     UserRegistration,
 )
@@ -172,6 +174,24 @@ def get_user_bookings(user_id: int, db: Session = Depends(get_db)):
     return booking.get_bookings(db, user_id)
 
 
+@app.get(
+    "/bookings/reference/{booking_reference}",
+    response_model=BookingConfirmationOut,
+    tags=["Bookings"],
+)
+def get_booking_confirmation_endpoint(
+    booking_reference: str,
+    user_id: int,
+    db: Session = Depends(get_db),
+):
+    """Retrieve a durable confirmation by public reference and booking owner."""
+    result = booking.get_booking_confirmation(db, booking_reference, user_id)
+    if isinstance(result, ErrorResponse):
+        status = 400 if result.error_code == "INVALID_BOOKING_REFERENCE" else 404
+        raise HTTPException(status_code=status, detail=result.model_dump())
+    return result
+
+
 @app.post("/cancel/{booking_id}", response_model=BookingOut, tags=["Bookings"])
 def cancel_booking_endpoint(booking_id: int, db: Session = Depends(get_db)):
     """Cancel an existing booking by its booking_id.
@@ -219,18 +239,18 @@ JAVA_SERVICE_URL = os.getenv("JAVA_SERVICE_URL", "http://localhost:8080")
 
 
 @app.post("/internal/bookings/from-hold", response_model=BookingOut, tags=["Internal"])
-def create_booking_from_hold(hold_data: dict, db: Session = Depends(get_db)):
+def create_booking_from_hold(hold_data: HoldBookingRequest, db: Session = Depends(get_db)):
     """Internal endpoint for Java hold service to create bookings.
 
-    This endpoint is called by the Java inventory hold service when confirming a hold.
+    The request body is validated by Pydantic before reaching the service layer.
     Returns HTTP 400 on booking failure so the Java service can detect and propagate the error.
     """
     result = booking.book_flight(
         db,
-        user_id=hold_data["travelerId"],
-        name=hold_data["travelerName"],
-        flight_id=hold_data["flightId"],
-        seat_class=hold_data["seatClass"]
+        user_id=hold_data.travelerId,
+        name=hold_data.travelerName,
+        flight_id=hold_data.flightId,
+        seat_class=hold_data.seatClass
     )
     if isinstance(result, ErrorResponse):
         raise HTTPException(status_code=400, detail=result.model_dump())

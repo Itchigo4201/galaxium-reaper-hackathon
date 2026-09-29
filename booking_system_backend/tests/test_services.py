@@ -1263,12 +1263,8 @@ class TestFromHoldEndpointContract:
         assert isinstance(result, ErrorResponse)
         assert result.error_code == "NO_SEATS_AVAILABLE"
 
-    def test_externalBookingReference_is_numeric_string(self, db_session):
-        """
-        Verify that the Java service stores booking_id as the external reference.
-        The Python API returns an integer booking_id; HoldService stores String.valueOf(bookingId).
-        The frontend must handle a numeric string like "42" as the booking reference.
-        """
+    def test_booking_reference_is_public_gx_format(self, db_session):
+        """Python returns the public reference consumed by the Java hold service."""
         u, f = self._setup(db_session)
         result = booking.book_flight(
             db_session,
@@ -1277,13 +1273,6 @@ class TestFromHoldEndpointContract:
             flight_id=f.flight_id,
             seat_class="economy",
         )
-        # Simulate what HoldService.java does: String.valueOf(booking.getBookingId())
-        # This produces a numeric string, not a GX- prefixed reference.
-        external_ref = str(result.booking_id)
-        # Must be a non-empty numeric string that the frontend can display and copy
-        assert external_ref.isdigit()
-        assert len(external_ref) > 0
-        # safeReference() on a numeric string should be unchanged (all digits allowed)
-        import re
-        safe = re.sub(r'[^a-zA-Z0-9_-]', '-', external_ref)
-        assert safe == external_ref  # No substitution needed
+
+        assert result.booking_reference == f"GX-{result.booking_id:06d}"
+        assert booking.parse_booking_reference(result.booking_reference) == result.booking_id

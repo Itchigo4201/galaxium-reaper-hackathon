@@ -38,3 +38,10 @@ class Booking(Base):
     booking_time = Column(String, nullable=False)
     seat_class = Column(String, nullable=False, default='economy')  # economy/business/galaxium
     price_paid = Column(Integer, nullable=False)  # Actual price at booking time
+
+    @property
+    def booking_reference(self) -> str:
+        """Stable public reference derived from the booking primary key."""
+        if self.booking_id is None:
+            return ""
+        return f"GX-{self.booking_id:06d}"
