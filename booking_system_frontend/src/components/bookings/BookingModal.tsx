@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import type { Flight, SeatClass, Quote, Hold } from '../../types';
 import { Modal, Button } from '../common';
 import {
@@ -11,6 +12,10 @@ import {
   Tag,
   Timer,
   Zap,
+  CheckCircle2,
+  Calendar,
+  Clock,
+  Ticket,
 } from 'lucide-react';
 import { formatCurrency, formatDate, calculateDuration } from '../../utils/formatters';
 import { createQuote, createHold, confirmHold, releaseHold } from '../../services/api';
@@ -18,7 +23,7 @@ import { storeHold, removeHold } from '../../utils/holdStorage';
 import { useUser } from '../../hooks/useUserContext';
 import toast from 'react-hot-toast';
 
-type Step = 'select' | 'quote' | 'hold';
+type Step = 'select' | 'quote' | 'hold' | 'confirmed';
 
 interface BookingModalProps {
   isOpen: boolean;
@@ -29,12 +34,14 @@ interface BookingModalProps {
 
 export const BookingModal = ({ isOpen, onClose, flight, onSuccess }: BookingModalProps) => {
   const { user } = useUser();
+  const navigate = useNavigate();
   const [step, setStep] = useState<Step>('select');
   const [selectedClass, setSelectedClass] = useState<SeatClass>('economy');
   const [isLoading, setIsLoading] = useState(false);
   const [quote, setQuote] = useState<Quote | null>(null);
   const [hold, setHold] = useState<Hold | null>(null);
   const [timeLeft, setTimeLeft] = useState(0);
+  const [confirmedBookingId, setConfirmedBookingId] = useState<string | null>(null);
 
   // Reset state when modal opens
   useEffect(() => {
@@ -44,6 +51,7 @@ export const BookingModal = ({ isOpen, onClose, flight, onSuccess }: BookingModa
       setQuote(null);
       setHold(null);
       setTimeLeft(0);
+      setConfirmedBookingId(null);
     }
   }, [isOpen]);
 
@@ -202,11 +210,10 @@ export const BookingModal = ({ isOpen, onClose, flight, onSuccess }: BookingModa
     try {
       const confirmed = await confirmHold(hold.holdId);
       removeHold(user.user_id, hold.holdId);
-      toast.success(
-        `Booking confirmed! Reference: #${confirmed.externalBookingReference}`
-      );
+      setConfirmedBookingId(String(confirmed.externalBookingReference));
+      setStep('confirmed');
       onSuccess();
-      onClose();
+      toast.success(`Booking confirmed! Reference: #${confirmed.externalBookingReference}`);
     } catch {
       toast.error('Failed to confirm booking');
     } finally {
@@ -238,6 +245,8 @@ export const BookingModal = ({ isOpen, onClose, flight, onSuccess }: BookingModa
         return 'Your Price Quote';
       case 'hold':
         return 'Seat Reserved';
+      case 'confirmed':
+        return 'Booking Confirmed';
     }
   };
 
@@ -435,11 +444,119 @@ export const BookingModal = ({ isOpen, onClose, flight, onSuccess }: BookingModa
     </div>
   );
 
+  // Step 4: Booking confirmed summary
+  const renderConfirmedStep = () => {
+    const Icon = selectedClassData?.icon || Plane;
+    const seatLabel =
+      selectedClass === 'economy'
+        ? 'Economy'
+        : selectedClass === 'business'
+        ? 'Business'
+        : 'Galaxium Class';
+
+    return (
+      <div className="space-y-6">
+        {/* Success header */}
+        <div className="flex flex-col items-center gap-3 py-4">
+          <div className="p-4 rounded-full bg-alien-green/15 border border-alien-green/30">
+            <CheckCircle2 size={40} className="text-alien-green" />
+          </div>
+          <div className="text-center">
+            <p className="text-star-white/60 text-sm">Your seat is booked</p>
+          </div>
+        </div>
+
+        {/* Booking reference */}
+        <div className="flex items-center gap-2 p-3 rounded-lg bg-alien-green/10 border border-alien-green/30">
+          <Ticket size={16} className="text-alien-green" />
+          <span className="text-xs text-star-white/60">Booking Reference</span>
+          <span className="font-mono font-bold text-alien-green ml-auto">
+            #{confirmedBookingId}
+          </span>
+        </div>
+
+        {/* Flight details */}
+        <div className="glass-card p-4 bg-white/5 space-y-3">
+          <div className="flex items-center gap-2 mb-2">
+            <Plane size={16} className="text-space-blue" />
+            <h3 className="font-bold text-star-white">
+              {flight.origin} → {flight.destination}
+            </h3>
+          </div>
+          <div className="grid grid-cols-2 gap-3 text-sm">
+            <div className="flex items-start gap-2">
+              <Calendar size={14} className="text-star-white/40 mt-0.5 shrink-0" />
+              <div>
+                <p className="text-xs text-star-white/50 mb-0.5">Departure</p>
+                <p className="text-star-white font-medium">
+                  {formatDate(flight.departure_time, 'MMM dd, HH:mm')}
+                </p>
+              </div>
+            </div>
+            <div className="flex items-start gap-2">
+              <Calendar size={14} className="text-star-white/40 mt-0.5 shrink-0" />
+              <div>
+                <p className="text-xs text-star-white/50 mb-0.5">Arrival</p>
+                <p className="text-star-white font-medium">
+                  {formatDate(flight.arrival_time, 'MMM dd, HH:mm')}
+                </p>
+              </div>
+            </div>
+            <div className="flex items-start gap-2">
+              <Clock size={14} className="text-star-white/40 mt-0.5 shrink-0" />
+              <div>
+                <p className="text-xs text-star-white/50 mb-0.5">Duration</p>
+                <p className="text-star-white font-medium">
+                  {calculateDuration(flight.departure_time, flight.arrival_time)}
+                </p>
+              </div>
+            </div>
+            <div className="flex items-start gap-2">
+              <Icon size={14} className={`${selectedClassData?.color} mt-0.5 shrink-0`} />
+              <div>
+                <p className="text-xs text-star-white/50 mb-0.5">Seat Class</p>
+                <p className="text-star-white font-medium">{seatLabel}</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Price */}
+        <div className="flex items-center justify-between p-4 rounded-xl bg-cosmic-gradient">
+          <div className="flex items-center gap-2">
+            <DollarSign className="text-white" size={20} />
+            <span className="text-white font-semibold">Total Paid</span>
+          </div>
+          <span className="text-xl font-bold text-white">
+            {formatCurrency(quote?.totalPrice || 0)}
+          </span>
+        </div>
+
+        {/* Actions */}
+        <div className="flex gap-3">
+          <Button variant="secondary" onClick={onClose} className="flex-1">
+            Close
+          </Button>
+          <Button
+            onClick={() => {
+              onClose();
+              navigate('/bookings');
+            }}
+            className="flex-1"
+          >
+            View My Bookings
+          </Button>
+        </div>
+      </div>
+    );
+  };
+
   return (
     <Modal isOpen={isOpen} onClose={onClose} title={getModalTitle()} size="md">
       {step === 'select' && renderSelectStep()}
       {step === 'quote' && renderQuoteStep()}
       {step === 'hold' && renderHoldStep()}
+      {step === 'confirmed' && renderConfirmedStep()}
     </Modal>
   );
 };

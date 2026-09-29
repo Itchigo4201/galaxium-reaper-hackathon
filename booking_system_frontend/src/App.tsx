@@ -5,8 +5,13 @@ import { Home } from './pages/Home';
 import { Flights } from './pages/Flights';
 import { MyBookings } from './pages/MyBookings';
 import { DestinationDetail } from './pages/DestinationDetail';
+import { HackathonDemo } from './pages/HackathonDemo';
 
 function App() {
+  if (import.meta.env.VITE_HACKATHON_DEMO === 'true') {
+    return <HackathonDemo />;
+  }
+
   return (
     <BrowserRouter>
       <UserProvider>
