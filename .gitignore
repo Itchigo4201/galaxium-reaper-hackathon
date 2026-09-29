@@ -179,3 +179,5 @@ application-*.local.properties
 .classpath
 .settings/
 .factorypath
+# Python virtual environments
+.venv/
