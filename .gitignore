@@ -183,3 +183,6 @@ application-*.local.properties
 # Bob lifecycle-hook runtime state (stashes, audit log, payload dumps)
 .bob/hooks/state/
 .playwright-mcp
+
+# Python virtual environments
+.venv/
