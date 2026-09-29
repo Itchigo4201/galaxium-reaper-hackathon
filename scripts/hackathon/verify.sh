@@ -11,6 +11,9 @@ frontend() {
   cd "$ROOT/booking_system_frontend"
   npm run lint
 
+  say "Frontend tests"
+  npm test
+
   say "Frontend production build"
   npm run build
 

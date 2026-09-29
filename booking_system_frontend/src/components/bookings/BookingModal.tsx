@@ -12,14 +12,11 @@ import {
   Tag,
   Timer,
   Zap,
-  CheckCircle2,
-  Calendar,
-  Clock,
-  Ticket,
 } from 'lucide-react';
 import { formatCurrency, formatDate, calculateDuration } from '../../utils/formatters';
 import { createQuote, createHold, confirmHold, releaseHold } from '../../services/api';
 import { storeHold, removeHold } from '../../utils/holdStorage';
+import { BookingConfirmation } from './BookingConfirmation';
 import { useUser } from '../../hooks/useUserContext';
 import toast from 'react-hot-toast';
 
@@ -180,7 +177,10 @@ export const BookingModal = ({ isOpen, onClose, flight, onSuccess }: BookingModa
     setIsLoading(true);
     try {
       const newHold = await createHold(quote.quoteId);
+      const remaining = new Date(newHold.reservedUntil).getTime() - Date.now();
+
       setHold(newHold);
+      setTimeLeft(Number.isNaN(remaining) ? 0 : Math.max(0, remaining));
       setStep('hold');
 
       if (user) {
@@ -209,8 +209,14 @@ export const BookingModal = ({ isOpen, onClose, flight, onSuccess }: BookingModa
     setIsLoading(true);
     try {
       const confirmed = await confirmHold(hold.holdId);
+      const bookingReference = confirmed.externalBookingReference;
+
+      if (!bookingReference) {
+        throw new Error('Confirmation response did not include a booking reference');
+      }
+
       removeHold(user.user_id, hold.holdId);
-      setConfirmedBookingId(String(confirmed.externalBookingReference));
+      setConfirmedBookingId(bookingReference);
       setStep('confirmed');
       onSuccess();
       toast.success(`Booking confirmed! Reference: #${confirmed.externalBookingReference}`);
@@ -446,108 +452,25 @@ export const BookingModal = ({ isOpen, onClose, flight, onSuccess }: BookingModa
 
   // Step 4: Booking confirmed summary
   const renderConfirmedStep = () => {
-    const Icon = selectedClassData?.icon || Plane;
-    const seatLabel =
-      selectedClass === 'economy'
-        ? 'Economy'
-        : selectedClass === 'business'
-        ? 'Business'
-        : 'Galaxium Class';
+    if (!confirmedBookingId) return null;
 
     return (
-      <div className="space-y-6">
-        {/* Success header */}
-        <div className="flex flex-col items-center gap-3 py-4">
-          <div className="p-4 rounded-full bg-alien-green/15 border border-alien-green/30">
-            <CheckCircle2 size={40} className="text-alien-green" />
-          </div>
-          <div className="text-center">
-            <p className="text-star-white/60 text-sm">Your seat is booked</p>
-          </div>
-        </div>
-
-        {/* Booking reference */}
-        <div className="flex items-center gap-2 p-3 rounded-lg bg-alien-green/10 border border-alien-green/30">
-          <Ticket size={16} className="text-alien-green" />
-          <span className="text-xs text-star-white/60">Booking Reference</span>
-          <span className="font-mono font-bold text-alien-green ml-auto">
-            #{confirmedBookingId}
-          </span>
-        </div>
-
-        {/* Flight details */}
-        <div className="glass-card p-4 bg-white/5 space-y-3">
-          <div className="flex items-center gap-2 mb-2">
-            <Plane size={16} className="text-space-blue" />
-            <h3 className="font-bold text-star-white">
-              {flight.origin} → {flight.destination}
-            </h3>
-          </div>
-          <div className="grid grid-cols-2 gap-3 text-sm">
-            <div className="flex items-start gap-2">
-              <Calendar size={14} className="text-star-white/40 mt-0.5 shrink-0" />
-              <div>
-                <p className="text-xs text-star-white/50 mb-0.5">Departure</p>
-                <p className="text-star-white font-medium">
-                  {formatDate(flight.departure_time, 'MMM dd, HH:mm')}
-                </p>
-              </div>
-            </div>
-            <div className="flex items-start gap-2">
-              <Calendar size={14} className="text-star-white/40 mt-0.5 shrink-0" />
-              <div>
-                <p className="text-xs text-star-white/50 mb-0.5">Arrival</p>
-                <p className="text-star-white font-medium">
-                  {formatDate(flight.arrival_time, 'MMM dd, HH:mm')}
-                </p>
-              </div>
-            </div>
-            <div className="flex items-start gap-2">
-              <Clock size={14} className="text-star-white/40 mt-0.5 shrink-0" />
-              <div>
-                <p className="text-xs text-star-white/50 mb-0.5">Duration</p>
-                <p className="text-star-white font-medium">
-                  {calculateDuration(flight.departure_time, flight.arrival_time)}
-                </p>
-              </div>
-            </div>
-            <div className="flex items-start gap-2">
-              <Icon size={14} className={`${selectedClassData?.color} mt-0.5 shrink-0`} />
-              <div>
-                <p className="text-xs text-star-white/50 mb-0.5">Seat Class</p>
-                <p className="text-star-white font-medium">{seatLabel}</p>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Price */}
-        <div className="flex items-center justify-between p-4 rounded-xl bg-cosmic-gradient">
-          <div className="flex items-center gap-2">
-            <DollarSign className="text-white" size={20} />
-            <span className="text-white font-semibold">Total Paid</span>
-          </div>
-          <span className="text-xl font-bold text-white">
-            {formatCurrency(quote?.totalPrice || 0)}
-          </span>
-        </div>
-
-        {/* Actions */}
-        <div className="flex gap-3">
-          <Button variant="secondary" onClick={onClose} className="flex-1">
-            Close
-          </Button>
-          <Button
-            onClick={() => {
-              onClose();
-              navigate('/bookings');
-            }}
-            className="flex-1"
-          >
-            View My Bookings
-          </Button>
-        </div>
-      </div>
+      <BookingConfirmation
+        data={{
+          reference: confirmedBookingId,
+          origin: flight.origin,
+          destination: flight.destination,
+          departureTime: flight.departure_time,
+          arrivalTime: flight.arrival_time,
+          seatClass: selectedClass,
+          totalPaid: quote?.totalPrice || 0,
+        }}
+        onClose={onClose}
+        onViewBookings={() => {
+          onClose();
+          navigate('/bookings');
+        }}
+      />
     );
   };
 
