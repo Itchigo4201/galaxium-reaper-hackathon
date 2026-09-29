@@ -55,6 +55,14 @@ class BookingRequest(BaseModel):
     seat_class: SeatClass = 'economy'  # Default to economy
 
 
+class HoldBookingRequest(BaseModel):
+    """Contract sent by the Java hold service when a hold is confirmed."""
+    travelerId: int
+    travelerName: str
+    flightId: int
+    seatClass: SeatClass
+
+
 class BookingOut(BaseModel):
     booking_id: int
     user_id: int
@@ -63,8 +71,24 @@ class BookingOut(BaseModel):
     booking_time: str
     seat_class: str
     price_paid: int
+    booking_reference: str
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class BookingConfirmationOut(BaseModel):
+    booking_id: int
+    booking_reference: str
+    user_id: int
+    flight_id: int
+    status: str
+    booking_time: str
+    seat_class: str
+    price_paid: int
+    origin: str
+    destination: str
+    departure_time: str
+    arrival_time: str
 
 
 class UserRegistration(BaseModel):

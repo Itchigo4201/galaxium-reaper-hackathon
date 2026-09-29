@@ -42,6 +42,7 @@ class PythonBackendClientTest {
         String responseJson = """
                 {
                     "booking_id": 42,
+                    "booking_reference": "GX-000042",
                     "user_id": 7,
                     "flight_id": 3,
                     "seat_class": "economy",
@@ -64,6 +65,7 @@ class PythonBackendClientTest {
         // Assert
         assertThat(result).isNotNull();
         assertThat(result.getBookingId()).isEqualTo(42);
+        assertThat(result.getBookingReference()).isEqualTo("GX-000042");
         assertThat(result.getUserId()).isEqualTo(7);
         assertThat(result.getFlightId()).isEqualTo(3);
         assertThat(result.getSeatClass()).isEqualTo("economy");

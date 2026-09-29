@@ -60,6 +60,8 @@ public class PythonBackendClient {
     public static class BookingResponse {
         @JsonProperty("booking_id")
         private Integer bookingId;
+        @JsonProperty("booking_reference")
+        private String bookingReference;
         @JsonProperty("user_id")
         private Integer userId;
         @JsonProperty("flight_id")
@@ -71,6 +73,8 @@ public class PythonBackendClient {
         // Getters and setters
         public Integer getBookingId() { return bookingId; }
         public void setBookingId(Integer bookingId) { this.bookingId = bookingId; }
+        public String getBookingReference() { return bookingReference; }
+        public void setBookingReference(String bookingReference) { this.bookingReference = bookingReference; }
         public Integer getUserId() { return userId; }
         public void setUserId(Integer userId) { this.userId = userId; }
         public Integer getFlightId() { return flightId; }

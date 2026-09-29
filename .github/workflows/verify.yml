@@ -56,7 +56,7 @@ jobs:
       - name: Install dependencies
         run: python -m pip install -r requirements.txt
       - name: Test service layer
-        run: python -m pytest -q tests/test_services.py
+        run: python -m pytest -q tests/test_services.py tests/test_booking_confirmation_backend.py
       - name: Note REST compatibility baseline
         run: |
           echo "REST endpoint tests are not blocking this hackathon pipeline."
