@@ -1,5 +1,51 @@
 # Galaxium Travels — Interplanetary Booking System
 
+> **IBM Bob Hackathon 2026 · Students / Early Career · Explore, Fix, and Build**
+> Live demo → **[itchigo4201.github.io/galaxium-reaper-hackathon](https://itchigo4201.github.io/galaxium-reaper-hackathon/)**
+
+---
+
+## Hackathon summary
+
+### What we started with
+
+This is a fork of the IBM Galaxium Travels demo codebase — a production-style application purposely designed to challenge AI agents with a multi-service, polyglot architecture: a Python/FastAPI + FastMCP backend, a Java 17 Spring Boot hold service, a React 19 frontend, SQLite/PostgreSQL persistence, and cross-service workflows. **We had no prior familiarity with the code.**
+
+### The problem we found
+
+After completing a quote → hold → confirm booking flow through the Java hold service, the React confirmation modal **immediately closed**. The booking reference survived only in a 5-second toast — an important success state that was trivially easy to miss. There was no way to copy the reference, add the trip to a calendar, download a receipt, or navigate to booking history from that screen.
+
+### What we fixed and built
+
+| | Detail |
+|---|---|
+| **Fix** | The modal no longer auto-closes on confirmation. The booking reference is kept visible until the user explicitly dismisses. |
+| **Build** | The confirmation screen became a full post-booking action center: copy reference, add-to-calendar (`.ics` download), PDF receipt, and a link to booking history. |
+| **Tests added** | 56 Python service-layer tests · 142 frontend component/utility tests · 123 Java unit + integration tests · 10 e2e tests across two suites |
+| **Audit outcome** | Final adversarial audit (PR #4) found **zero production-code regressions** — all new tests green, no existing behaviour changed. |
+
+### How IBM Bob was used
+
+Bob was the primary exploration and review tool throughout:
+
+1. **Explore** — Bob mapped the five-service request flow (`Frontend → Python proxy → Java hold service → Python /internal/bookings/from-hold`) from a cold start, surfacing the MCP dual-path architecture and the non-obvious `SessionLocal` dual-patch constraint in tests.
+2. **Fix** — Bob identified the exact component ([`BookingModal.tsx`](booking_system_frontend/src/components/bookings/BookingModal.tsx)) and guided the one-state-variable fix.
+3. **Build** — Bob designed the [`BookingConfirmation`](booking_system_frontend/src/components/bookings/BookingConfirmation.tsx) component and the [`bookingArtifacts`](booking_system_frontend/src/utils/bookingArtifacts.ts) utility for calendar and receipt generation.
+4. **Test** — Bob wrote the adversarial test suites including seat-class isolation tests in [`test_services.py`](booking_system_backend/tests/test_services.py) and the full `BookingConfirmation` component suite.
+5. **Review** — A budgeted Bob review ran on each PR via [`.github/workflows/bob-review.yml`](.github/workflows/bob-review.yml), posting structured comments directly to the PR.
+6. **Polish** — This documentation pass.
+
+Bob usage was deliberately budgeted (300 call cap, tracked in [`HACKATHON_OPERATIONS.md`](HACKATHON_OPERATIONS.md)).
+
+### Proof & verification
+
+- **CI:** [`verify.yml`](.github/workflows/verify.yml) — frontend lint + tests + build, Python service-layer tests, Java tests — runs on every PR and push to `main`.
+- **Pages deploy:** [`pages.yml`](.github/workflows/pages.yml) — live demo auto-deploys on every merge to `main`.
+- **Smoke test:** [`scripts/hackathon/smoke-live.sh`](scripts/hackathon/smoke-live.sh) — verifies the deployed demo and all its assets post-deploy.
+- **Submission docs:** [`HACKATHON_SUBMISSION.md`](HACKATHON_SUBMISSION.md) · [`BOB_USAGE.md`](BOB_USAGE.md)
+
+---
+
 A demo multi-service application for booking interplanetary space travel. Its purpose is to **showcase challenges agents face in a real enterprise-style codebase** — three polyglot services, cross-service workflows, a dual REST + MCP backend, and intentional architectural constraints that make it interesting to work with.
 
 ## 🌟 Features
